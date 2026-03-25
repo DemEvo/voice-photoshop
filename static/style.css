@@ -5,6 +5,7 @@
     --accent-vibrant: #8a2be2;
     --accent-glow: #e020a5;
     --accent-advanced: #00c6ff;
+    --accent-macro: #ff9f43;
     --text-primary: #f0f0f5;
     --text-muted: #a0a0b0;
     --blur-glass: 16px;
@@ -143,6 +144,25 @@ header p {
     box-shadow: 0 12px 48px rgba(0, 198, 255, 0.1), inset 0 0 0 1px rgba(0,198,255,0.15);
 }
 
+/* Macro accent (warm orange glow) */
+.macro-accent {
+    border-color: rgba(255, 159, 67, 0.12);
+}
+.macro-accent:hover {
+    border-color: rgba(255, 159, 67, 0.3);
+    box-shadow: 0 12px 48px rgba(255, 159, 67, 0.08), inset 0 0 0 1px rgba(255,159,67,0.12);
+}
+
+.macro-accent h3 {
+    background: linear-gradient(135deg, var(--accent-macro), #ee5a24);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.macro-accent h3 svg {
+    stroke: var(--accent-macro);
+}
+
 /* Upload Section */
 .upload-section {
     text-align: center;
@@ -202,7 +222,6 @@ header p {
     display: none !important;
 }
 
-/* Layout Animation */
 @keyframes fadeInScale {
     from { opacity: 0; transform: scale(0.95) translateY(20px); }
     to { opacity: 1; transform: scale(1) translateY(0); }
@@ -296,7 +315,10 @@ button {
     border-color: rgba(255,255,255,0.4);
 }
 
-/* Mode Toggle */
+/* ========================================
+   MODE TOGGLE (Simple / Pro)
+   ======================================== */
+
 .mode-toggle-container {
     display: flex;
     justify-content: center;
@@ -306,7 +328,7 @@ button {
 .mode-toggle {
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: 0.8rem;
     cursor: pointer;
     user-select: none;
 }
@@ -319,10 +341,10 @@ button {
     position: relative;
     width: 52px;
     height: 28px;
-    background: rgba(255,255,255,0.1);
+    background: rgba(255,159,67,0.25);
     border-radius: 14px;
     transition: var(--transition);
-    border: 1px solid var(--border-glass);
+    border: 1px solid rgba(255,159,67,0.3);
 }
 
 .toggle-slider::after {
@@ -333,32 +355,81 @@ button {
     width: 20px;
     height: 20px;
     border-radius: 50%;
-    background: var(--text-muted);
+    background: var(--accent-macro);
     transition: var(--transition);
+    box-shadow: 0 0 8px rgba(255,159,67,0.5);
 }
 
 .mode-toggle input:checked + .toggle-slider {
-    background: linear-gradient(135deg, var(--accent-advanced), #0072ff);
-    border-color: rgba(0, 198, 255, 0.3);
+    background: rgba(0, 198, 255, 0.2);
+    border-color: rgba(0, 198, 255, 0.4);
 }
 
 .mode-toggle input:checked + .toggle-slider::after {
     transform: translateX(24px);
-    background: #fff;
+    background: var(--accent-advanced);
     box-shadow: 0 0 12px var(--accent-advanced);
 }
 
 .toggle-label-text {
-    font-size: 0.95rem;
-    font-weight: 500;
-    color: var(--text-muted);
+    font-size: 0.9rem;
+    font-weight: 600;
     letter-spacing: 1px;
     text-transform: uppercase;
     transition: var(--transition);
+    color: var(--text-muted);
 }
 
-.mode-toggle input:checked ~ .toggle-label-text {
+.toggle-label-left.active {
+    color: var(--accent-macro);
+}
+
+.toggle-label-right.active {
     color: var(--accent-advanced);
+}
+
+/* ========================================
+   MACRO CONTROLS (Simple Mode)
+   ======================================== */
+
+.macro-controls {
+    animation: fadeInScale 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+.macro-accent input[type=range]::-webkit-slider-thumb {
+    background: var(--accent-macro);
+    box-shadow: 0 0 10px var(--accent-macro);
+}
+
+.macro-accent input[type=range]:hover::-webkit-slider-thumb {
+    background: #ee5a24;
+    box-shadow: 0 0 15px #ee5a24;
+}
+
+/* ========================================
+   PRO CONTROLS
+   ======================================== */
+
+.pro-controls {
+    animation: slideDown 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+.pro-section-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--text-muted);
+    margin: 1rem 0 0.5rem 0.5rem;
+}
+
+.pro-section-label.advanced-label {
+    color: rgba(0, 198, 255, 0.6);
+}
+
+@keyframes slideDown {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 /* Editor Grid */
@@ -366,18 +437,6 @@ button {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 1rem;
-    animation: fadeInScale 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
-}
-
-/* Advanced Controls Wrapper */
-.advanced-controls {
-    animation: slideDown 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
-    padding-top: 20px;
-}
-
-@keyframes slideDown {
-    from { opacity: 0; transform: translateY(-10px); }
-    to { opacity: 1; transform: translateY(0); }
 }
 
 .control-group {
@@ -402,6 +461,16 @@ button {
     font-size: 0.8rem;
     color: var(--text-muted);
     font-weight: 300;
+}
+
+.baseline-text {
+    font-size: 0.75rem;
+    color: #4cd964;
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+    margin-top: 0.25rem;
+    letter-spacing: 0.5px;
+    opacity: 0.85;
 }
 
 /* Range Sliders */

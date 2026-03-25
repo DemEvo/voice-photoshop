@@ -2,6 +2,8 @@ import os
 import uuid
 import io
 import time
+import asyncio
+import logging
 import numpy as np
 import scipy.io.wavfile as wav
 import parselmouth
@@ -15,6 +17,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional
 
+logger = logging.getLogger("voice-photoshop")
+logging.basicConfig(level=logging.INFO)
+
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
@@ -27,21 +32,21 @@ audio_sessions: dict = {}
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# --- Request Models ---
+# --- Request Models (relaxed validation — clamping is done client-side) ---
 
 class BasicParams(BaseModel):
-    pitch_ratio: float = Field(ge=0.5, le=2.0, default=1.0)
-    formant_ratio: float = Field(ge=0.8, le=1.2, default=1.0)
-    presence_db: float = Field(ge=0.0, le=10.0, default=0.0)
-    compression_level: float = Field(ge=0.0, le=1.0, default=0.0)
+    pitch_ratio: float = Field(default=1.0)
+    formant_ratio: float = Field(default=1.0)
+    presence_db: float = Field(default=0.0)
+    compression_level: float = Field(default=0.0)
 
 class AdvancedParams(BaseModel):
-    f1_shift: float = Field(default=0.0)        # Hz offset (display only, protected)
-    f2_shift: float = Field(default=0.0)         # Hz offset for F2
-    jitter_mod: float = Field(default=0.0)       # -1..1
-    breathiness_mod: float = Field(default=0.0)  # 0..1
-    noise_gate_db: float = Field(default=-100.0) # threshold dB
-    deesser_amount: float = Field(default=0.0)   # 0..100 percent
+    f1_shift: float = Field(default=0.0)
+    f2_shift: float = Field(default=0.0)
+    jitter_mod: float = Field(default=0.0)
+    breathiness_mod: float = Field(default=0.0)
+    noise_gate_db: float = Field(default=-100.0)
+    deesser_amount: float = Field(default=0.0)
 
 class ProcessRequest(BaseModel):
     basic: BasicParams = BasicParams()
@@ -147,22 +152,24 @@ def apply_lpc_formant_shift(sound, f2_shift: float, sr: int, f0: float) -> np.nd
                 # Shift frequency by f2_shift Hz
                 angle = np.angle(r)
                 magnitude = np.abs(r)
-                # Clamp magnitude for stability
-                if magnitude >= 1.0:
-                    magnitude = 0.999
                 new_freq = freq + f2_shift
                 if new_freq < 800.0:
                     new_freq = 800.0  # don't shift into F1 territory
+                if new_freq > (sr / 2.0 - 100):
+                    new_freq = sr / 2.0 - 100  # don't exceed Nyquist
                 new_angle = new_freq * 2.0 * np.pi / sr
                 if angle < 0:
                     new_angle = -new_angle
+                # Clamp magnitude strictly inside unit circle for stability
+                magnitude = min(magnitude, 0.99)
                 new_roots.append(magnitude * np.exp(1j * new_angle))
 
         new_roots = np.array(new_roots)
 
-        # Check stability: all roots must be inside unit circle
-        if np.any(np.abs(new_roots) >= 1.0):
-            raise ValueError("LPC_INSTABILITY")
+        # Force-clamp any remaining unstable roots (safety net)
+        for idx in range(len(new_roots)):
+            if np.abs(new_roots[idx]) >= 1.0:
+                new_roots[idx] = new_roots[idx] / np.abs(new_roots[idx]) * 0.99
 
         # Reconstruct LPC polynomial from new roots
         new_poly = np.real(np.poly(new_roots))
@@ -296,6 +303,128 @@ def peak_normalize(data: np.ndarray, target_dbfs: float = -1.0) -> np.ndarray:
     return data * (target_amp / peak)
 
 
+# --- Baseline Metrics Extraction (T-Spec 3) ---
+
+def extract_baseline_metrics(data: np.ndarray, sr: int) -> dict:
+    """
+    Extract 9 acoustic baseline metrics from raw audio.
+    Uses praat-parselmouth for vocal metrics and numpy for spectral/dynamic metrics.
+    Returns dict with None for metrics that cannot be computed (fault tolerance §5).
+    """
+    float_data = to_float64(data)
+    duration = len(float_data) / sr
+    total_rms = float(np.sqrt(np.mean(float_data**2)))
+
+    metrics = {
+        "pitch_hz": None,
+        "f1_hz": None,
+        "f2_hz": None,
+        "jitter_pct": None,
+        "hnr_db": None,
+        "hf_energy_ratio": 0.0,
+        "crest_factor_db": 0.0,
+        "noise_floor_db": 0.0,
+        "sibilance_peak_db": 0.0,
+    }
+
+    # §5: Silence check
+    if total_rms < 0.0001:
+        return metrics
+
+    # --- Numpy-based metrics (always computable if not silent) ---
+
+    # Crest Factor: peak-to-RMS in dB
+    peak_amplitude = float(np.max(np.abs(float_data)))
+    metrics["crest_factor_db"] = round(float(20 * np.log10(peak_amplitude / (total_rms + 1e-10))), 1)
+
+    # Noise Floor: RMS of bottom 5th percentile of absolute amplitudes, in dB
+    abs_audio = np.abs(float_data)
+    p5_threshold = np.percentile(abs_audio, 5)
+    quietest = float_data[abs_audio <= p5_threshold]
+    if len(quietest) > 0:
+        noise_rms = float(np.sqrt(np.mean(quietest**2)))
+        metrics["noise_floor_db"] = round(float(20 * np.log10(noise_rms + 1e-10)), 1)
+
+    # HF Energy Ratio: fraction of RMS energy above 3000 Hz
+    from scipy.signal import butter, sosfilt
+    if sr > 6000:
+        sos_hp = butter(4, 3000.0, btype='high', fs=sr, output='sos')
+        hf_signal = sosfilt(sos_hp, float_data)
+        hf_rms = float(np.sqrt(np.mean(hf_signal**2)))
+        metrics["hf_energy_ratio"] = round(hf_rms / (total_rms + 1e-10), 3)
+
+    # Sibilance Peak: peak energy in 5000-8000 Hz band, in dB
+    if sr > 16000:
+        low_sib = min(5000.0, sr / 2.0 - 100)
+        high_sib = min(8000.0, sr / 2.0 - 100)
+        if high_sib > low_sib:
+            sos_bp = butter(4, [low_sib, high_sib], btype='band', fs=sr, output='sos')
+            sib_signal = sosfilt(sos_bp, float_data)
+            sib_peak = float(np.max(np.abs(sib_signal)))
+            metrics["sibilance_peak_db"] = round(float(20 * np.log10(sib_peak + 1e-10)), 1)
+
+    # --- Praat-based metrics (require minimum duration) ---
+
+    # §5: Too short for Praat analysis
+    if duration < 0.5:
+        return metrics
+
+    sound = parselmouth.Sound(float_data, sampling_frequency=sr)
+
+    # Pitch (F0) median — ignore unvoiced frames
+    try:
+        pitch_obj = call(sound, "To Pitch", 0.0, 75.0, 600.0)
+        f0_median = call(pitch_obj, "Get quantile", 0.0, 0.0, 0.5, "Hertz")
+        if not np.isnan(f0_median) and f0_median > 0:
+            metrics["pitch_hz"] = round(float(f0_median), 1)
+    except Exception:
+        pass
+
+    # F1, F2 medians via Formant (burg)
+    try:
+        formant_obj = call(sound, "To Formant (burg)", 0.0, 5, 5500.0, 0.025, 50.0)
+        n_frames = call(formant_obj, "Get number of frames")
+        f1_vals = []
+        f2_vals = []
+        for i in range(1, n_frames + 1):
+            f1 = call(formant_obj, "Get value at time", 1, call(formant_obj, "Get time from frame number", i), "Hertz", "Linear")
+            f2 = call(formant_obj, "Get value at time", 2, call(formant_obj, "Get time from frame number", i), "Hertz", "Linear")
+            if not np.isnan(f1) and f1 > 0:
+                f1_vals.append(f1)
+            if not np.isnan(f2) and f2 > 0:
+                f2_vals.append(f2)
+        if f1_vals:
+            metrics["f1_hz"] = round(float(np.median(f1_vals)), 1)
+        if f2_vals:
+            metrics["f2_hz"] = round(float(np.median(f2_vals)), 1)
+    except Exception:
+        pass
+
+    # Jitter (local) via PointProcess
+    try:
+        pp = call(sound, "To PointProcess (periodic, cc)", 75.0, 600.0)
+        jitter = call(pp, "Get jitter (local)", 0.0, 0.0, 0.0001, 0.02, 1.3)
+        if not np.isnan(jitter):
+            metrics["jitter_pct"] = round(float(jitter * 100), 2)
+    except Exception:
+        pass
+
+    # HNR (Harmonics-to-Noise Ratio) mean
+    try:
+        hnr_obj = call(sound, "To Harmonicity (cc)", 0.01, 75.0, 0.1, 1.0)
+        hnr_mean = call(hnr_obj, "Get mean", 0.0, 0.0)
+        if not np.isnan(hnr_mean):
+            metrics["hnr_db"] = round(float(hnr_mean), 1)
+            # §5: If HNR < 0 on entire file → unvoiced
+            if hnr_mean < 0:
+                metrics["pitch_hz"] = None
+                metrics["jitter_pct"] = None
+    except Exception:
+        pass
+
+    return metrics
+
+
 # --- API Endpoints ---
 
 @app.post("/upload")
@@ -328,15 +457,27 @@ async def upload_audio(file: UploadFile = File(...)):
     for k in keys_to_delete:
         audio_sessions.pop(k, None)
 
+    # Extract baseline metrics (T-Spec 3)
+    import json as _json
+    metrics = extract_baseline_metrics(data, sr)
+    logger.info(f"Baseline metrics: {metrics}")
+
     file_id = str(uuid.uuid4())
     audio_sessions[file_id] = {
         'data': data,
         'sr': sr,
-        'last_accessed': current_time
+        'last_accessed': current_time,
+        'metrics': metrics
     }
 
+    response_body = _json.dumps({
+        "file_id": file_id,
+        "message": "Uploaded successfully",
+        "metrics": metrics
+    })
+
     return Response(
-        content='{"file_id": "' + file_id + '", "message": "Uploaded"}',
+        content=response_body,
         media_type="application/json",
         status_code=status_code
     )
@@ -351,18 +492,39 @@ async def process_audio(file_id: str, request: ProcessRequest):
     data = session['data']
     sr = session['sr']
 
+    # Per-session lock: serialize processing to prevent overlapping DSP operations
+    if 'lock' not in session:
+        session['lock'] = asyncio.Lock()
+    lock = session['lock']
+
+    if lock.locked():
+        raise HTTPException(status_code=429, detail="Previous processing still in progress")
+
+    async with lock:
+        return await _do_process(data, sr, request, file_id)
+
+async def _do_process(data, sr, request: ProcessRequest, file_id: str):
     if data.nbytes > 50 * 1024 * 1024:
         audio_sessions.pop(file_id, None)
         raise HTTPException(status_code=500, detail="RAM buffer size exceeded 50MB, session cleared")
+
+    # Server-side clamping (defense in depth)
+    basic = request.basic
+    basic.pitch_ratio = max(0.5, min(2.0, basic.pitch_ratio))
+    basic.formant_ratio = max(0.8, min(1.2, basic.formant_ratio))
+    basic.presence_db = max(0.0, min(10.0, basic.presence_db))
+    basic.compression_level = max(0.0, min(1.0, basic.compression_level))
+    adv = request.advanced
+
+    logger.info(f"Processing: pitch={basic.pitch_ratio:.3f} formant={basic.formant_ratio:.3f} "
+                f"presence={basic.presence_db:.1f} comp={basic.compression_level:.3f} "
+                f"adv={'yes' if adv else 'no'}")
 
     try:
         start_time = time.time()
 
         float_data = to_float64(data)
         sound = parselmouth.Sound(float_data, sampling_frequency=sr)
-
-        basic = request.basic
-        adv = request.advanced
 
         # --- Step 1: Noise Gate (Advanced) ---
         if adv and adv.noise_gate_db > -100.0:

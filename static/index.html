@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Voice Photoshop — Advanced DSP</title>
+    <title>Voice Photoshop — Perceptual DSP</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
@@ -53,56 +53,111 @@
                 </div>
             </div>
 
-            <!-- Mode Toggle -->
+            <!-- Mode Toggle: Simple / Pro -->
             <div class="mode-toggle-container">
                 <label class="mode-toggle" id="mode-toggle-label">
-                    <input type="checkbox" id="toggle-advanced">
+                    <span class="toggle-label-text toggle-label-left active" id="label-simple">Simple</span>
+                    <input type="checkbox" id="toggle-pro">
                     <span class="toggle-slider"></span>
-                    <span class="toggle-label-text">Advanced Mode</span>
+                    <span class="toggle-label-text toggle-label-right" id="label-pro">Pro</span>
                 </label>
             </div>
 
-            <!-- Panel A: Basic Controls -->
-            <div class="controls-grid" id="basic-controls">
-                <div class="control-group glass-panel">
-                    <h3>Pitch Ratio</h3>
+            <!-- SIMPLE MODE: 3 Macro Sliders -->
+            <div class="controls-grid macro-controls" id="simple-controls">
+                <div class="control-group glass-panel macro-accent macro-clarity">
+                    <h3>
+                        <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" style="vertical-align:text-bottom;margin-right:6px">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        </svg>
+                        Clarity
+                    </h3>
                     <div class="slider-container">
-                        <input type="range" id="pitch_ratio" min="0" max="100" step="1" value="50">
-                        <span class="value-display" id="val-pitch">1.0</span>
+                        <input type="range" id="macro-clarity" min="0" max="100" step="1" value="0">
+                        <span class="value-display" id="val-clarity">0%</span>
                     </div>
-                    <p class="help-text">Log scale • 0.5 – 2.0</p>
+                    <p class="help-text">Articulation detail & presence</p>
                 </div>
 
-                <div class="control-group glass-panel">
-                    <h3>Formant Ratio</h3>
+                <div class="control-group glass-panel macro-accent macro-warmth">
+                    <h3>
+                        <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" style="vertical-align:text-bottom;margin-right:6px">
+                            <path d="M14 14.76V3.5a2.5 2.5 0 1 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"></path>
+                        </svg>
+                        Warmth
+                    </h3>
                     <div class="slider-container">
-                        <input type="range" id="formant_ratio" min="0" max="100" step="1" value="50">
-                        <span class="value-display" id="val-formant">1.0</span>
+                        <input type="range" id="macro-warmth" min="0" max="100" step="1" value="0">
+                        <span class="value-display" id="val-warmth">0%</span>
                     </div>
-                    <p class="help-text">Linear • 0.8 – 1.2</p>
+                    <p class="help-text">Body mass & dynamic smoothing</p>
                 </div>
 
-                <div class="control-group glass-panel">
-                    <h3>Presence (EQ)</h3>
+                <div class="control-group glass-panel macro-accent macro-age">
+                    <h3>
+                        <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" style="vertical-align:text-bottom;margin-right:6px">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <path d="M12 6v6l4 2"></path>
+                        </svg>
+                        Vocal Age
+                    </h3>
                     <div class="slider-container">
-                        <input type="range" id="presence_db" min="0" max="10" step="0.1" value="0">
-                        <span class="value-display" id="val-presence">0.0 dB</span>
+                        <input type="range" id="macro-age" min="-100" max="100" step="1" value="0">
+                        <span class="value-display" id="val-age">0</span>
                     </div>
-                    <p class="help-text">High-shelf 3kHz boost</p>
-                </div>
-
-                <div class="control-group glass-panel">
-                    <h3>Compression</h3>
-                    <div class="slider-container">
-                        <input type="range" id="compression_level" min="0" max="1" step="0.01" value="0">
-                        <span class="value-display" id="val-comp">0.0</span>
-                    </div>
-                    <p class="help-text">Dynamic range reduction</p>
+                    <p class="help-text">Vocal cord wear · −young / +aged</p>
                 </div>
             </div>
 
-            <!-- Panels B + C: Advanced Controls (hidden by default) -->
-            <div class="advanced-controls hidden" id="advanced-controls">
+            <!-- PRO MODE: All 10 Engineering Sliders (hidden by default) -->
+            <div class="pro-controls hidden" id="pro-controls">
+                <!-- Basic Engineering Params -->
+                <div class="pro-section-label">Core Parameters</div>
+                <div class="controls-grid">
+                    <div class="control-group glass-panel">
+                        <h3>Pitch Ratio</h3>
+                        <div class="slider-container">
+                            <input type="range" id="pitch_ratio" min="0" max="100" step="1" value="50">
+                            <span class="value-display" id="val-pitch">1.00</span>
+                        </div>
+                        <p class="help-text">Log scale · 0.5 – 2.0</p>
+                        <p class="baseline-text" id="baseline-pitch">Original: —</p>
+                    </div>
+
+                    <div class="control-group glass-panel">
+                        <h3>Formant Ratio</h3>
+                        <div class="slider-container">
+                            <input type="range" id="formant_ratio" min="0" max="100" step="1" value="50">
+                            <span class="value-display" id="val-formant">1.00</span>
+                        </div>
+                        <p class="help-text">Linear · 0.8 – 1.2</p>
+                        <p class="baseline-text"><span id="baseline-f1">F1: —</span> · <span id="baseline-f2">F2: —</span></p>
+                    </div>
+
+                    <div class="control-group glass-panel">
+                        <h3>Presence (EQ)</h3>
+                        <div class="slider-container">
+                            <input type="range" id="presence_db" min="0" max="10" step="0.1" value="0">
+                            <span class="value-display" id="val-presence">0.0 dB</span>
+                        </div>
+                        <p class="help-text">High-shelf 3kHz boost</p>
+                        <p class="baseline-text" id="baseline-hf">HF Energy: —</p>
+                    </div>
+
+                    <div class="control-group glass-panel">
+                        <h3>Compression</h3>
+                        <div class="slider-container">
+                            <input type="range" id="compression_level" min="0" max="100" step="1" value="0">
+                            <span class="value-display" id="val-comp">0</span>
+                        </div>
+                        <p class="help-text">Dynamic range reduction · 0–100</p>
+                        <p class="baseline-text" id="baseline-crest">Crest Factor: —</p>
+                    </div>
+                </div>
+
+                <!-- Advanced Engineering Params -->
+                <div class="pro-section-label advanced-label">Advanced Parameters</div>
                 <div class="controls-grid">
                     <div class="control-group glass-panel advanced-accent">
                         <h3>F2 Shift</h3>
@@ -111,15 +166,17 @@
                             <span class="value-display" id="val-f2">0 Hz</span>
                         </div>
                         <p class="help-text">LPC root offset (F1 protected &lt; 800 Hz)</p>
+                        <p class="baseline-text" id="baseline-f2-abs">Original F2: —</p>
                     </div>
 
                     <div class="control-group glass-panel advanced-accent">
                         <h3>Jitter</h3>
                         <div class="slider-container">
                             <input type="range" id="jitter_mod" min="-100" max="100" step="1" value="0">
-                            <span class="value-display" id="val-jitter">0.0</span>
+                            <span class="value-display" id="val-jitter">0.00</span>
                         </div>
-                        <p class="help-text">Pitch perturbation · −1 reduce / +1 add</p>
+                        <p class="help-text">Pitch perturbation · −1 smooth / +1 rough</p>
+                        <p class="baseline-text" id="baseline-jitter">Original: —</p>
                     </div>
 
                     <div class="control-group glass-panel advanced-accent">
@@ -129,6 +186,7 @@
                             <span class="value-display" id="val-breath">0%</span>
                         </div>
                         <p class="help-text">Aspiration noise mix</p>
+                        <p class="baseline-text" id="baseline-hnr">HNR: —</p>
                     </div>
 
                     <div class="control-group glass-panel advanced-accent">
@@ -138,6 +196,7 @@
                             <span class="value-display" id="val-gate">OFF</span>
                         </div>
                         <p class="help-text">Silence below threshold</p>
+                        <p class="baseline-text" id="baseline-noise-floor">Noise Floor: —</p>
                     </div>
 
                     <div class="control-group glass-panel advanced-accent">
@@ -147,6 +206,7 @@
                             <span class="value-display" id="val-deesser">0%</span>
                         </div>
                         <p class="help-text">Sibilance reduction (5kHz+ RMS)</p>
+                        <p class="baseline-text" id="baseline-sibilance">Peak Sibilance: —</p>
                     </div>
                 </div>
             </div>
