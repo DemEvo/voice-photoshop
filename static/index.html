@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Voice Photoshop MVP</title>
+    <title>Voice Photoshop — Advanced DSP</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
@@ -53,23 +53,33 @@
                 </div>
             </div>
 
-            <div class="controls-grid">
+            <!-- Mode Toggle -->
+            <div class="mode-toggle-container">
+                <label class="mode-toggle" id="mode-toggle-label">
+                    <input type="checkbox" id="toggle-advanced">
+                    <span class="toggle-slider"></span>
+                    <span class="toggle-label-text">Advanced Mode</span>
+                </label>
+            </div>
+
+            <!-- Panel A: Basic Controls -->
+            <div class="controls-grid" id="basic-controls">
                 <div class="control-group glass-panel">
                     <h3>Pitch Ratio</h3>
                     <div class="slider-container">
-                        <input type="range" id="pitch_ratio" min="0.7" max="1.3" step="0.01" value="1.0">
+                        <input type="range" id="pitch_ratio" min="0" max="100" step="1" value="50">
                         <span class="value-display" id="val-pitch">1.0</span>
                     </div>
-                    <p class="help-text">Adjust fundamental frequency</p>
+                    <p class="help-text">Log scale • 0.5 – 2.0</p>
                 </div>
 
                 <div class="control-group glass-panel">
                     <h3>Formant Ratio</h3>
                     <div class="slider-container">
-                        <input type="range" id="formant_ratio" min="0.7" max="1.3" step="0.01" value="1.0">
+                        <input type="range" id="formant_ratio" min="0" max="100" step="1" value="50">
                         <span class="value-display" id="val-formant">1.0</span>
                     </div>
-                    <p class="help-text">Vocal tract length scaling</p>
+                    <p class="help-text">Linear • 0.8 – 1.2</p>
                 </div>
 
                 <div class="control-group glass-panel">
@@ -88,6 +98,56 @@
                         <span class="value-display" id="val-comp">0.0</span>
                     </div>
                     <p class="help-text">Dynamic range reduction</p>
+                </div>
+            </div>
+
+            <!-- Panels B + C: Advanced Controls (hidden by default) -->
+            <div class="advanced-controls hidden" id="advanced-controls">
+                <div class="controls-grid">
+                    <div class="control-group glass-panel advanced-accent">
+                        <h3>F2 Shift</h3>
+                        <div class="slider-container">
+                            <input type="range" id="f2_shift" min="-300" max="300" step="1" value="0">
+                            <span class="value-display" id="val-f2">0 Hz</span>
+                        </div>
+                        <p class="help-text">LPC root offset (F1 protected &lt; 800 Hz)</p>
+                    </div>
+
+                    <div class="control-group glass-panel advanced-accent">
+                        <h3>Jitter</h3>
+                        <div class="slider-container">
+                            <input type="range" id="jitter_mod" min="-100" max="100" step="1" value="0">
+                            <span class="value-display" id="val-jitter">0.0</span>
+                        </div>
+                        <p class="help-text">Pitch perturbation · −1 reduce / +1 add</p>
+                    </div>
+
+                    <div class="control-group glass-panel advanced-accent">
+                        <h3>Breathiness</h3>
+                        <div class="slider-container">
+                            <input type="range" id="breathiness_mod" min="0" max="100" step="1" value="0">
+                            <span class="value-display" id="val-breath">0%</span>
+                        </div>
+                        <p class="help-text">Aspiration noise mix</p>
+                    </div>
+
+                    <div class="control-group glass-panel advanced-accent">
+                        <h3>Noise Gate</h3>
+                        <div class="slider-container">
+                            <input type="range" id="noise_gate_db" min="-100" max="0" step="1" value="-100">
+                            <span class="value-display" id="val-gate">OFF</span>
+                        </div>
+                        <p class="help-text">Silence below threshold</p>
+                    </div>
+
+                    <div class="control-group glass-panel advanced-accent">
+                        <h3>De-Esser</h3>
+                        <div class="slider-container">
+                            <input type="range" id="deesser_amount" min="0" max="100" step="1" value="0">
+                            <span class="value-display" id="val-deesser">0%</span>
+                        </div>
+                        <p class="help-text">Sibilance reduction (5kHz+ RMS)</p>
+                    </div>
                 </div>
             </div>
             

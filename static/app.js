@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentBlobUrl = null;
     let isProcessing = false;
     let pendingRequest = false;
+    let advancedMode = false;
 
     // Elements
     const uploadPanel = document.getElementById('upload-panel');
@@ -11,20 +12,39 @@ document.addEventListener('DOMContentLoaded', () => {
     const dropArea = document.getElementById('drop-area');
     const fileInput = document.getElementById('file-input');
     const uploadLoader = document.getElementById('upload-loader');
-    
-    // Controls
-    const sliders = {
+    const toggleAdvanced = document.getElementById('toggle-advanced');
+    const advancedControls = document.getElementById('advanced-controls');
+
+    // Basic Sliders
+    const basicSliders = {
         pitch_ratio: document.getElementById('pitch_ratio'),
         formant_ratio: document.getElementById('formant_ratio'),
         presence_db: document.getElementById('presence_db'),
         compression_level: document.getElementById('compression_level')
     };
-    
-    const displays = {
+
+    const basicDisplays = {
         pitch_ratio: document.getElementById('val-pitch'),
         formant_ratio: document.getElementById('val-formant'),
         presence_db: document.getElementById('val-presence'),
         compression_level: document.getElementById('val-comp')
+    };
+
+    // Advanced Sliders
+    const advSliders = {
+        f2_shift: document.getElementById('f2_shift'),
+        jitter_mod: document.getElementById('jitter_mod'),
+        breathiness_mod: document.getElementById('breathiness_mod'),
+        noise_gate_db: document.getElementById('noise_gate_db'),
+        deesser_amount: document.getElementById('deesser_amount')
+    };
+
+    const advDisplays = {
+        f2_shift: document.getElementById('val-f2'),
+        jitter_mod: document.getElementById('val-jitter'),
+        breathiness_mod: document.getElementById('val-breath'),
+        noise_gate_db: document.getElementById('val-gate'),
+        deesser_amount: document.getElementById('val-deesser')
     };
 
     // Playback
@@ -40,9 +60,79 @@ document.addEventListener('DOMContentLoaded', () => {
     const ctx = canvas.getContext('2d');
     let audioCtx = null;
 
-    // -------------------------------------------------------------
+    // -----------------------------------------------------------
+    // MAPPING FUNCTIONS (T-Spec §4)
+    // -----------------------------------------------------------
+
+    /**
+     * Pitch: Log scale mapping.
+     * Slider 0..100 → pitch_ratio 0.5..2.0
+     * Using exponential/log mapping: ratio = 0.5 * 2^(slider/100)
+     * At slider=0 → 0.5, slider=50 → ~1.0, slider=100 → 2.0
+     */
+    function mapPitchRatio(sliderVal) {
+        return 0.5 * Math.pow(2.0, sliderVal / 100.0);
+    }
+
+    /**
+     * Formant: Linear scale mapping.
+     * Slider 0..100 → formant_ratio 0.8..1.2
+     */
+    function mapFormantRatio(sliderVal) {
+        return 0.8 + (sliderVal / 100.0) * 0.4;
+    }
+
+    /**
+     * Jitter: Linear mapping.
+     * Slider -100..100 → jitter_mod -1.0..1.0
+     */
+    function mapJitter(sliderVal) {
+        return sliderVal / 100.0;
+    }
+
+    // -----------------------------------------------------------
+    // DISPLAY UPDATE
+    // -----------------------------------------------------------
+
+    function updateBasicDisplays() {
+        const pRatio = mapPitchRatio(parseInt(basicSliders.pitch_ratio.value));
+        basicDisplays.pitch_ratio.textContent = pRatio.toFixed(2);
+
+        const fRatio = mapFormantRatio(parseInt(basicSliders.formant_ratio.value));
+        basicDisplays.formant_ratio.textContent = fRatio.toFixed(2);
+
+        basicDisplays.presence_db.textContent = parseFloat(basicSliders.presence_db.value).toFixed(1) + ' dB';
+        basicDisplays.compression_level.textContent = parseFloat(basicSliders.compression_level.value).toFixed(2);
+    }
+
+    function updateAdvDisplays() {
+        advDisplays.f2_shift.textContent = advSliders.f2_shift.value + ' Hz';
+        advDisplays.jitter_mod.textContent = mapJitter(parseInt(advSliders.jitter_mod.value)).toFixed(2);
+        advDisplays.breathiness_mod.textContent = advSliders.breathiness_mod.value + '%';
+
+        const gateVal = parseInt(advSliders.noise_gate_db.value);
+        advDisplays.noise_gate_db.textContent = gateVal <= -100 ? 'OFF' : gateVal + ' dB';
+
+        advDisplays.deesser_amount.textContent = advSliders.deesser_amount.value + '%';
+    }
+
+    // -----------------------------------------------------------
+    // ADVANCED MODE TOGGLE
+    // -----------------------------------------------------------
+
+    toggleAdvanced.addEventListener('change', () => {
+        advancedMode = toggleAdvanced.checked;
+        if (advancedMode) {
+            advancedControls.classList.remove('hidden');
+        } else {
+            advancedControls.classList.add('hidden');
+        }
+        triggerProcessing();
+    });
+
+    // -----------------------------------------------------------
     // UPLOAD LOGIC
-    // -------------------------------------------------------------
+    // -----------------------------------------------------------
     const preventDefaults = (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -85,7 +175,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         uploadLoader.classList.remove('hidden');
-        
+
         const formData = new FormData();
         formData.append('file', file);
 
@@ -98,16 +188,15 @@ document.addEventListener('DOMContentLoaded', () => {
             if (res.ok || res.status === 206) {
                 const data = await res.json();
                 fileId = data.file_id;
-                
+
                 if (res.status === 206) {
                     statusBar.textContent = 'Audio truncated to 15s.';
                 } else {
                     statusBar.textContent = 'Ready to edit.';
                 }
-                
-                // Init audio rendering
+
                 await triggerProcessing();
-                
+
                 uploadPanel.classList.add('hidden');
                 editorPanel.classList.remove('hidden');
                 initVisualizer();
@@ -123,11 +212,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // -------------------------------------------------------------
+    // -----------------------------------------------------------
     // DSP & CONTROLS
-    // -------------------------------------------------------------
-    
-    // Simple Debounce
+    // -----------------------------------------------------------
+
     let timer;
     const processAudio = async () => {
         if (isProcessing) {
@@ -135,16 +223,30 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        statusBar.textContent = 'Processing DSP Engine...';
+        statusBar.textContent = advancedMode ? 'Processing Advanced DSP...' : 'Processing DSP Engine...';
         statusBar.style.color = 'var(--accent-glow)';
         isProcessing = true;
 
+        // Build payload with mapped values
         const payload = {
-            pitch_ratio: parseFloat(sliders.pitch_ratio.value),
-            formant_ratio: parseFloat(sliders.formant_ratio.value),
-            presence_db: parseFloat(sliders.presence_db.value),
-            compression_level: parseFloat(sliders.compression_level.value)
+            basic: {
+                pitch_ratio: mapPitchRatio(parseInt(basicSliders.pitch_ratio.value)),
+                formant_ratio: mapFormantRatio(parseInt(basicSliders.formant_ratio.value)),
+                presence_db: parseFloat(basicSliders.presence_db.value),
+                compression_level: parseFloat(basicSliders.compression_level.value)
+            }
         };
+
+        if (advancedMode) {
+            payload.advanced = {
+                f1_shift: 0.0,  // Protected, always 0
+                f2_shift: parseFloat(advSliders.f2_shift.value),
+                jitter_mod: mapJitter(parseInt(advSliders.jitter_mod.value)),
+                breathiness_mod: parseFloat(advSliders.breathiness_mod.value) / 100.0,
+                noise_gate_db: parseFloat(advSliders.noise_gate_db.value),
+                deesser_amount: parseFloat(advSliders.deesser_amount.value)
+            };
+        }
 
         try {
             const res = await fetch(`/process/${fileId}`, {
@@ -153,15 +255,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify(payload)
             });
 
+            if (res.status === 408) {
+                statusBar.textContent = 'Error: Processing Timeout (> 4s).';
+                statusBar.style.color = '#ff4444';
+                return;
+            }
+            if (res.status === 422) {
+                const err = await res.json();
+                statusBar.textContent = `DSP Error: ${err.detail}`;
+                statusBar.style.color = '#ff4444';
+                return;
+            }
             if (!res.ok) throw new Error(await res.text());
 
             const blob = await res.blob();
-            
-            // Re-assign player
+
             if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
             currentBlobUrl = URL.createObjectURL(blob);
             audioPlayer.src = currentBlobUrl;
-            
+
             if (res.headers.has('X-Processing-Warning')) {
                 statusBar.textContent = 'Warning: Processor Timeout (Original Audio Fallback).';
                 statusBar.style.color = '#ffaa00';
@@ -169,11 +281,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 statusBar.textContent = 'Processing Complete.';
                 statusBar.style.color = '#00ffcc';
             }
-            
-            drawWaveformProxy();
 
-            // Auto-play if it was playing? 
-            // Usually bad for UX, let them press play.
+            drawWaveformProxy();
 
         } catch (e) {
             console.error(e);
@@ -183,7 +292,7 @@ document.addEventListener('DOMContentLoaded', () => {
             isProcessing = false;
             if (pendingRequest) {
                 pendingRequest = false;
-                triggerProcessing(); // loop back any pending slider updates
+                triggerProcessing();
             } else {
                 setTimeout(() => {
                     if (!isProcessing) {
@@ -197,22 +306,32 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const triggerProcessing = () => {
         clearTimeout(timer);
-        timer = setTimeout(processAudio, 400); // 400ms debounce
+        timer = setTimeout(processAudio, 400);
     };
 
-    // Update UI on input
-    Object.keys(sliders).forEach(key => {
-        sliders[key].addEventListener('input', (e) => {
-            let val = e.target.value;
-            if (key === 'presence_db') val += ' dB';
-            displays[key].textContent = val;
+    // Basic slider listeners
+    Object.keys(basicSliders).forEach(key => {
+        basicSliders[key].addEventListener('input', () => {
+            updateBasicDisplays();
             triggerProcessing();
         });
     });
 
-    // -------------------------------------------------------------
+    // Advanced slider listeners
+    Object.keys(advSliders).forEach(key => {
+        advSliders[key].addEventListener('input', () => {
+            updateAdvDisplays();
+            triggerProcessing();
+        });
+    });
+
+    // Init display values
+    updateBasicDisplays();
+    updateAdvDisplays();
+
+    // -----------------------------------------------------------
     // PLAYBACK AND VISUALIZER
-    // -------------------------------------------------------------
+    // -----------------------------------------------------------
 
     function formatTime(secs) {
         if (isNaN(secs)) return '00:00';
@@ -245,13 +364,11 @@ document.addEventListener('DOMContentLoaded', () => {
         audioPlayer.currentTime = 0;
     });
 
-    // Dummy visualization for aesthetics
     function initVisualizer() {
-        // Just resize internal config
         canvas.width = canvas.parentElement.clientWidth;
         canvas.height = canvas.parentElement.clientHeight;
         drawWaveformProxy(0);
-        
+
         window.addEventListener('resize', () => {
             if(canvas.offsetParent) {
                 canvas.width = canvas.parentElement.clientWidth;
@@ -262,50 +379,46 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function drawWaveformProxy(progress = 0) {
-        if (!canvas.offsetParent) return; // Hidden
+        if (!canvas.offsetParent) return;
         const w = canvas.width;
         const h = canvas.height;
         ctx.clearRect(0,0,w,h);
-        
+
         const barCount = 64;
         const barWidth = (w / barCount) - 2;
-        
+
         for (let i = 0; i < barCount; i++) {
-            // Generate deterministic pseudo-random heights for aesthetic
-            // Base aesthetic on fileId hash equivalent or simple seed
             let hRatio = 0.2 + (Math.sin(i * 0.4) * 0.4) + (Math.cos(i * 0.9) * 0.3) + 0.1;
             hRatio = Math.max(0.1, hRatio);
             let barH = h * hRatio * 0.8;
-            
+
             let x = i * (barWidth + 2);
             let y = (h - barH) / 2;
-            
+
             const isPlayed = (i / barCount) <= progress;
             ctx.fillStyle = isPlayed ? '#e020a5' : '#8a2be255';
-            
+
             ctx.beginPath();
             ctx.roundRect(x, y, barWidth, barH, 4);
             ctx.fill();
         }
-        
-        // Playhead
+
         if (progress > 0 && progress < 1) {
             ctx.fillStyle = '#fff';
             ctx.fillRect(w * progress, 0, 2, h);
         }
     }
 
-    // -------------------------------------------------------------
+    // -----------------------------------------------------------
     // EXPORT & APP RESET
-    // -------------------------------------------------------------
+    // -----------------------------------------------------------
     btnExport.addEventListener('click', () => {
         if (!currentBlobUrl) return;
         const a = document.createElement('a');
         a.href = currentBlobUrl;
-        
+
         const d = new Date();
         const timestamp = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}_${String(d.getHours()).padStart(2,'0')}${String(d.getMinutes()).padStart(2,'0')}`;
-        // Output convention: golden_ref_[timestamp].wav
         a.download = `golden_ref_${timestamp}.wav`;
         a.click();
     });
@@ -315,21 +428,31 @@ document.addEventListener('DOMContentLoaded', () => {
         audioPlayer.src = '';
         currentBlobUrl = null;
         fileId = null;
-        
-        // Reset Sliders
-        sliders.pitch_ratio.value = "1.0";
-        sliders.formant_ratio.value = "1.0";
-        sliders.presence_db.value = "0";
-        sliders.compression_level.value = "0";
-        Object.keys(sliders).forEach(k => {
-            displays[k].textContent = k === 'presence_db' ? '0 dB' : (k.includes('ratio') ? '1.0' : '0.0');
-        });
-        
-        // UI State
+
+        // Reset Basic Sliders
+        basicSliders.pitch_ratio.value = "50";
+        basicSliders.formant_ratio.value = "50";
+        basicSliders.presence_db.value = "0";
+        basicSliders.compression_level.value = "0";
+        updateBasicDisplays();
+
+        // Reset Advanced Sliders
+        advSliders.f2_shift.value = "0";
+        advSliders.jitter_mod.value = "0";
+        advSliders.breathiness_mod.value = "0";
+        advSliders.noise_gate_db.value = "-100";
+        advSliders.deesser_amount.value = "0";
+        updateAdvDisplays();
+
+        // Reset mode
+        toggleAdvanced.checked = false;
+        advancedMode = false;
+        advancedControls.classList.add('hidden');
+
         btnPlay.classList.remove('playing');
         timeDisplay.textContent = '00:00 / 00:00';
         statusBar.textContent = 'Waiting for file...';
-        
+
         editorPanel.classList.add('hidden');
         uploadPanel.classList.remove('hidden');
     });
