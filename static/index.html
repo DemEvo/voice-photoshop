@@ -20,7 +20,7 @@
         </header>
 
         <section class="upload-section glass-panel" id="upload-panel">
-            <div class="file-drop-area" id="drop-area">
+            <div class="file-drop-area" id="drop-area" style="margin-bottom: 1rem;">
                 <div class="icon-upload">
                     <svg viewBox="0 0 24 24" width="48" height="48" stroke="currentColor" stroke-width="2" fill="none">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -28,13 +28,22 @@
                         <line x1="12" y1="3" x2="12" y2="15"></line>
                     </svg>
                 </div>
-                <h3>Drag & Drop your WAV file</h3>
-                <p>or click to browse</p>
+                <h3>1. Select Source Audio</h3>
+                <p id="source-filename">Click to browse (.wav)</p>
                 <input type="file" id="file-input" accept=".wav" hidden>
             </div>
+            
+            <div class="file-drop-area" id="drop-area-ref" style="border-color: rgba(255,51,102,0.3); background: rgba(255,51,102,0.02); padding: 2rem;">
+                <h3 style="color: #ff3366;">2. Select Reference Audio (Optional)</h3>
+                <p id="ref-filename">Click to browse (.wav)</p>
+                <input type="file" id="file-input-ref" accept=".wav" hidden>
+            </div>
+
+            <button class="btn-primary" id="btn-upload" style="margin-top: 1rem; width: 100%; font-size: 1.1rem; padding: 1rem;">Upload & Extract</button>
+
             <div class="loading-overlay hidden" id="upload-loader">
                 <div class="spinner"></div>
-                <span>Parsing Audio...</span>
+                <span>Extracting Radial Metrics...</span>
             </div>
         </section>
 
@@ -59,7 +68,7 @@
                     <span class="toggle-label-text toggle-label-left active" id="label-simple">Simple</span>
                     <input type="checkbox" id="toggle-pro">
                     <span class="toggle-slider"></span>
-                    <span class="toggle-label-text toggle-label-right" id="label-pro">Pro</span>
+                    <span class="toggle-label-text toggle-label-right" id="label-pro">Radial Pro</span>
                 </label>
             </div>
 
@@ -110,105 +119,122 @@
                 </div>
             </div>
 
-            <!-- PRO MODE: All 10 Engineering Sliders (hidden by default) -->
+            <!-- PRO MODE: RADIAL CONSTRUCTOR (T-Spec 4) -->
             <div class="pro-controls hidden" id="pro-controls">
-                <!-- Basic Engineering Params -->
-                <div class="pro-section-label">Core Parameters</div>
-                <div class="controls-grid">
-                    <div class="control-group glass-panel">
-                        <h3>Pitch Ratio</h3>
-                        <div class="slider-container">
-                            <input type="range" id="pitch_ratio" min="0" max="100" step="1" value="50">
-                            <span class="value-display" id="val-pitch">1.00</span>
+                
+                <div class="radial-constructor" id="radial-container">
+                    <div class="center-hub"></div>
+                    
+                    <!-- Axis 1: Pitch (Hz) -->
+                    <div class="axis" style="--angle: 0deg;">
+                        <div class="track-wrapper">
+                            <div class="reference-marker" id="ref-pitch" style="--ref-percent: 0%;"></div>
+                            <input type="range" class="source-slider" id="src-pitch" min="50" max="400" value="100" step="1">
                         </div>
-                        <p class="help-text">Log scale · 0.5 – 2.0</p>
-                        <p class="baseline-text" id="baseline-pitch">Original: —</p>
+                        <div class="label-container">
+                            <div class="label-title">Pitch</div>
+                            <div class="label-value"><span id="val-pitch">100</span> Hz</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Axis 2: F1 (Hz) -->
+                    <div class="axis" style="--angle: 40deg;">
+                        <div class="track-wrapper">
+                            <div class="reference-marker" id="ref-f1" style="--ref-percent: 0%;"></div>
+                            <input type="range" class="source-slider" id="src-f1" min="200" max="1000" value="400" step="1">
+                        </div>
+                        <div class="label-container">
+                            <div class="label-title">F1 (Formant)</div>
+                            <div class="label-value"><span id="val-f1">400</span> Hz</div>
+                        </div>
                     </div>
 
-                    <div class="control-group glass-panel">
-                        <h3>Formant Ratio</h3>
-                        <div class="slider-container">
-                            <input type="range" id="formant_ratio" min="0" max="100" step="1" value="50">
-                            <span class="value-display" id="val-formant">1.00</span>
+                    <!-- Axis 3: F2 (Hz) -->
+                    <div class="axis" style="--angle: 80deg;">
+                        <div class="track-wrapper">
+                            <div class="reference-marker" id="ref-f2" style="--ref-percent: 0%;"></div>
+                            <input type="range" class="source-slider" id="src-f2" min="800" max="2500" value="1200" step="1">
                         </div>
-                        <p class="help-text">Linear · 0.8 – 1.2</p>
-                        <p class="baseline-text"><span id="baseline-f1">F1: —</span> · <span id="baseline-f2">F2: —</span></p>
+                        <div class="label-container">
+                            <div class="label-title">F2 Shift</div>
+                            <div class="label-value"><span id="val-f2">1200</span> Hz</div>
+                        </div>
                     </div>
 
-                    <div class="control-group glass-panel">
-                        <h3>Presence (EQ)</h3>
-                        <div class="slider-container">
-                            <input type="range" id="presence_db" min="0" max="10" step="0.1" value="0">
-                            <span class="value-display" id="val-presence">0.0 dB</span>
+                    <!-- Axis 4: HF Energy (Ratio) -->
+                    <div class="axis" style="--angle: 120deg;">
+                        <div class="track-wrapper">
+                            <div class="reference-marker" id="ref-hf" style="--ref-percent: 0%;"></div>
+                            <input type="range" class="source-slider" id="src-hf" min="0" max="0.5" value="0.1" step="0.01">
                         </div>
-                        <p class="help-text">High-shelf 3kHz boost</p>
-                        <p class="baseline-text" id="baseline-hf">HF Energy: —</p>
+                        <div class="label-container">
+                            <div class="label-title">Presence (HF)</div>
+                            <div class="label-value"><span id="val-hf">0.1</span></div>
+                        </div>
                     </div>
 
-                    <div class="control-group glass-panel">
-                        <h3>Compression</h3>
-                        <div class="slider-container">
-                            <input type="range" id="compression_level" min="0" max="100" step="1" value="0">
-                            <span class="value-display" id="val-comp">0</span>
+                    <!-- Axis 5: Crest Factor (dB) -->
+                    <div class="axis" style="--angle: 160deg;">
+                        <div class="track-wrapper">
+                            <div class="reference-marker" id="ref-crest" style="--ref-percent: 0%;"></div>
+                            <input type="range" class="source-slider" id="src-crest" min="5" max="30" value="18" step="0.1">
                         </div>
-                        <p class="help-text">Dynamic range reduction · 0–100</p>
-                        <p class="baseline-text" id="baseline-crest">Crest Factor: —</p>
+                        <div class="label-container">
+                            <div class="label-title">Crest (Comp)</div>
+                            <div class="label-value"><span id="val-crest">18.0</span> dB</div>
+                        </div>
                     </div>
+
+                    <!-- Axis 6: Sibilance (dB) -->
+                    <div class="axis" style="--angle: 200deg;">
+                        <div class="track-wrapper">
+                            <div class="reference-marker" id="ref-sib" style="--ref-percent: 0%;"></div>
+                            <input type="range" class="source-slider" id="src-sib" min="-40" max="0" value="-15" step="0.1">
+                        </div>
+                        <div class="label-container">
+                            <div class="label-title">Sibilance (De-Ess)</div>
+                            <div class="label-value"><span id="val-sib">-15.0</span> dB</div>
+                        </div>
+                    </div>
+
+                    <!-- Axis 7: Noise Floor (dB) -->
+                    <div class="axis" style="--angle: 240deg;">
+                        <div class="track-wrapper">
+                            <div class="reference-marker" id="ref-noise" style="--ref-percent: 0%;"></div>
+                            <input type="range" class="source-slider" id="src-noise" min="-80" max="-10" value="-40" step="1">
+                        </div>
+                        <div class="label-container">
+                            <div class="label-title">Noise Gate</div>
+                            <div class="label-value"><span id="val-noise">-40</span> dB</div>
+                        </div>
+                    </div>
+
+                    <!-- Axis 8: HNR (dB) -->
+                    <div class="axis" style="--angle: 280deg;">
+                        <div class="track-wrapper">
+                            <div class="reference-marker" id="ref-hnr" style="--ref-percent: 0%;"></div>
+                            <input type="range" class="source-slider" id="src-hnr" min="0" max="30" value="15" step="0.1">
+                        </div>
+                        <div class="label-container">
+                            <div class="label-title">HNR (Breath)</div>
+                            <div class="label-value"><span id="val-hnr">15.0</span> dB</div>
+                        </div>
+                    </div>
+
+                    <!-- Axis 9: Jitter (%) -->
+                    <div class="axis" style="--angle: 320deg;">
+                        <div class="track-wrapper">
+                            <div class="reference-marker" id="ref-jitter" style="--ref-percent: 0%;"></div>
+                            <input type="range" class="source-slider" id="src-jitter" min="0" max="5" value="1.5" step="0.01">
+                        </div>
+                        <div class="label-container">
+                            <div class="label-title">Jitter</div>
+                            <div class="label-value"><span id="val-jitter">1.5</span> %</div>
+                        </div>
+                    </div>
+
                 </div>
 
-                <!-- Advanced Engineering Params -->
-                <div class="pro-section-label advanced-label">Advanced Parameters</div>
-                <div class="controls-grid">
-                    <div class="control-group glass-panel advanced-accent">
-                        <h3>F2 Shift</h3>
-                        <div class="slider-container">
-                            <input type="range" id="f2_shift" min="-300" max="300" step="1" value="0">
-                            <span class="value-display" id="val-f2">0 Hz</span>
-                        </div>
-                        <p class="help-text">LPC root offset (F1 protected &lt; 800 Hz)</p>
-                        <p class="baseline-text" id="baseline-f2-abs">Original F2: —</p>
-                    </div>
-
-                    <div class="control-group glass-panel advanced-accent">
-                        <h3>Jitter</h3>
-                        <div class="slider-container">
-                            <input type="range" id="jitter_mod" min="-100" max="100" step="1" value="0">
-                            <span class="value-display" id="val-jitter">0.00</span>
-                        </div>
-                        <p class="help-text">Pitch perturbation · −1 smooth / +1 rough</p>
-                        <p class="baseline-text" id="baseline-jitter">Original: —</p>
-                    </div>
-
-                    <div class="control-group glass-panel advanced-accent">
-                        <h3>Breathiness</h3>
-                        <div class="slider-container">
-                            <input type="range" id="breathiness_mod" min="0" max="100" step="1" value="0">
-                            <span class="value-display" id="val-breath">0%</span>
-                        </div>
-                        <p class="help-text">Aspiration noise mix</p>
-                        <p class="baseline-text" id="baseline-hnr">HNR: —</p>
-                    </div>
-
-                    <div class="control-group glass-panel advanced-accent">
-                        <h3>Noise Gate</h3>
-                        <div class="slider-container">
-                            <input type="range" id="noise_gate_db" min="-100" max="0" step="1" value="-100">
-                            <span class="value-display" id="val-gate">OFF</span>
-                        </div>
-                        <p class="help-text">Silence below threshold</p>
-                        <p class="baseline-text" id="baseline-noise-floor">Noise Floor: —</p>
-                    </div>
-
-                    <div class="control-group glass-panel advanced-accent">
-                        <h3>De-Esser</h3>
-                        <div class="slider-container">
-                            <input type="range" id="deesser_amount" min="0" max="100" step="1" value="0">
-                            <span class="value-display" id="val-deesser">0%</span>
-                        </div>
-                        <p class="help-text">Sibilance reduction (5kHz+ RMS)</p>
-                        <p class="baseline-text" id="baseline-sibilance">Peak Sibilance: —</p>
-                    </div>
-                </div>
             </div>
             
             <div class="status-bar" id="status-bar">

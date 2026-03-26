@@ -7,7 +7,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let isProcessing = false;
     let pendingRequest = false;
     let uiMode = 'simple'; // 'simple' | 'pro'
-    let macroDisconnected = false; // true when user manually edits Pro sliders
+    let macroDisconnected = false;
+    let metricsCache = { source: null, reference: null }; // true when user manually edits Pro sliders
 
     // ===================================================================
     // DOM ELEMENTS
@@ -37,26 +38,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Pro Sliders (all 10 engineering parameters)
     const proSliders = {
-        pitch_ratio: document.getElementById('pitch_ratio'),
-        formant_ratio: document.getElementById('formant_ratio'),
-        presence_db: document.getElementById('presence_db'),
-        compression_level: document.getElementById('compression_level'),
-        f2_shift: document.getElementById('f2_shift'),
-        jitter_mod: document.getElementById('jitter_mod'),
-        breathiness_mod: document.getElementById('breathiness_mod'),
-        noise_gate_db: document.getElementById('noise_gate_db'),
-        deesser_amount: document.getElementById('deesser_amount')
+        pitch: document.getElementById('src-pitch'),
+        f1: document.getElementById('src-f1'),
+        f2: document.getElementById('src-f2'),
+        hf: document.getElementById('src-hf'),
+        crest: document.getElementById('src-crest'),
+        sib: document.getElementById('src-sib'),
+        noise: document.getElementById('src-noise'),
+        hnr: document.getElementById('src-hnr'),
+        jitter: document.getElementById('src-jitter')
     };
     const proDisplays = {
-        pitch_ratio: document.getElementById('val-pitch'),
-        formant_ratio: document.getElementById('val-formant'),
-        presence_db: document.getElementById('val-presence'),
-        compression_level: document.getElementById('val-comp'),
-        f2_shift: document.getElementById('val-f2'),
-        jitter_mod: document.getElementById('val-jitter'),
-        breathiness_mod: document.getElementById('val-breath'),
-        noise_gate_db: document.getElementById('val-gate'),
-        deesser_amount: document.getElementById('val-deesser')
+        pitch: document.getElementById('val-pitch'),
+        f1: document.getElementById('val-f1'),
+        f2: document.getElementById('val-f2'),
+        hf: document.getElementById('val-hf'),
+        crest: document.getElementById('val-crest'),
+        sib: document.getElementById('val-sib'),
+        noise: document.getElementById('val-noise'),
+        hnr: document.getElementById('val-hnr'),
+        jitter: document.getElementById('val-jitter')
     };
 
     // Playback
@@ -126,23 +127,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ===================================================================
-    // PRO SLIDER → PHYSICAL VALUE CONVERTERS
-    // ===================================================================
-
-    /** Pitch: Log scale. Slider 0..100 → 0.5..2.0 */
-    function mapPitchRatio(v) { return 0.5 * Math.pow(2.0, v / 100.0); }
-    /** Reverse: physical pitch_ratio → slider 0..100 */
-    function unmapPitchRatio(r) { return Math.log2(r / 0.5) * 100.0; }
-
-    /** Formant: Linear. Slider 0..100 → 0.8..1.2 */
-    function mapFormantRatio(v) { return 0.8 + (v / 100.0) * 0.4; }
-    /** Reverse */
-    function unmapFormantRatio(r) { return ((r - 0.8) / 0.4) * 100.0; }
-
-    /** Jitter: Slider -100..100 → -1.0..1.0 */
-    function mapJitter(v) { return v / 100.0; }
-
-    // ===================================================================
     // DISPLAY SYNCHRONIZATION
     // ===================================================================
 
@@ -152,44 +136,13 @@ document.addEventListener('DOMContentLoaded', () => {
         macroDisplays.age.textContent = macroSliders.age.value;
     }
 
-    function updateProDisplays() {
-        proDisplays.pitch_ratio.textContent = mapPitchRatio(parseInt(proSliders.pitch_ratio.value)).toFixed(2);
-        proDisplays.formant_ratio.textContent = mapFormantRatio(parseInt(proSliders.formant_ratio.value)).toFixed(2);
-        proDisplays.presence_db.textContent = parseFloat(proSliders.presence_db.value).toFixed(1) + ' dB';
-        proDisplays.compression_level.textContent = proSliders.compression_level.value;
-        proDisplays.f2_shift.textContent = proSliders.f2_shift.value + ' Hz';
-        proDisplays.jitter_mod.textContent = mapJitter(parseInt(proSliders.jitter_mod.value)).toFixed(2);
-        proDisplays.breathiness_mod.textContent = proSliders.breathiness_mod.value + '%';
-        const gateVal = parseInt(proSliders.noise_gate_db.value);
-        proDisplays.noise_gate_db.textContent = gateVal <= -100 ? 'OFF' : gateVal + ' dB';
-        proDisplays.deesser_amount.textContent = proSliders.deesser_amount.value + '%';
-    }
+
 
     /**
      * T-Spec §2 step 2: Sync macro → pro sliders (one-way).
      * Physically updates hidden Pro slider DOM values so the payload is correct.
      */
-    function syncProSlidersFromMacro() {
-        const params = calculateMicroParams(
-            macroSliders.clarity.value,
-            macroSliders.warmth.value,
-            macroSliders.age.value
-        );
-
-        // Map physical values back to slider positions
-        proSliders.pitch_ratio.value = Math.round(unmapPitchRatio(params.basic.pitch_ratio));
-        proSliders.formant_ratio.value = Math.round(unmapFormantRatio(params.basic.formant_ratio));
-        proSliders.presence_db.value = params.basic.presence_db;
-        proSliders.compression_level.value = Math.round(params.basic.compression_level * 100); // 0..1 → 0..100
-
-        proSliders.f2_shift.value = params.advanced.f2_shift;
-        proSliders.jitter_mod.value = Math.round(params.advanced.jitter_mod * 100); // -1..1 → -100..100
-        proSliders.breathiness_mod.value = Math.round(params.advanced.breathiness_mod * 100); // 0..1 → 0..100
-        proSliders.noise_gate_db.value = params.advanced.noise_gate_db;
-        proSliders.deesser_amount.value = params.advanced.deesser_amount;
-
-        updateProDisplays();
-    }
+    function syncProSlidersFromMacro() { /* disabled for radial UI */ }
 
     // ===================================================================
     // MODE TOGGLE (Simple ↔ Pro)
@@ -217,37 +170,69 @@ document.addEventListener('DOMContentLoaded', () => {
     // UPLOAD LOGIC
     // ===================================================================
 
+    
     const preventDefaults = (e) => { e.preventDefault(); e.stopPropagation(); };
 
-    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(ev => {
-        dropArea.addEventListener(ev, preventDefaults, false);
-    });
-    ['dragenter', 'dragover'].forEach(ev => {
-        dropArea.addEventListener(ev, () => dropArea.classList.add('drag-active'), false);
-    });
-    ['dragleave', 'drop'].forEach(ev => {
-        dropArea.addEventListener(ev, () => dropArea.classList.remove('drag-active'), false);
+    // File 1: Source
+    const dropAreaSource = document.getElementById('drop-area');
+    const fileSource = document.getElementById('file-input');
+    const sourceFilename = document.getElementById('source-filename');
+    
+    // File 2: Reference
+    const dropAreaRef = document.getElementById('drop-area-ref');
+    const fileRef = document.getElementById('file-input-ref');
+    const refFilename = document.getElementById('ref-filename');
+    const btnUpload = document.getElementById('btn-upload');
+
+    [dropAreaSource, dropAreaRef].forEach(area => {
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(ev => {
+            area.addEventListener(ev, preventDefaults, false);
+        });
+        ['dragenter', 'dragover'].forEach(ev => {
+            area.addEventListener(ev, () => area.classList.add('drag-active'), false);
+        });
+        ['dragleave', 'drop'].forEach(ev => {
+            area.addEventListener(ev, () => area.classList.remove('drag-active'), false);
+        });
     });
 
-    dropArea.addEventListener('drop', (e) => {
-        const files = e.dataTransfer.files;
-        if (files.length) handleFiles(files[0]);
-    }, false);
+    dropAreaSource.addEventListener('click', () => fileSource.click());
+    dropAreaRef.addEventListener('click', () => fileRef.click());
 
-    dropArea.addEventListener('click', () => fileInput.click());
-    fileInput.addEventListener('change', function() {
-        if (this.files.length) handleFiles(this.files[0]);
+    dropAreaSource.addEventListener('drop', (e) => {
+        if (e.dataTransfer.files.length) {
+            fileSource.files = e.dataTransfer.files;
+            sourceFilename.textContent = fileSource.files[0].name;
+        }
     });
 
-    async function handleFiles(file) {
-        if (!file.name.toLowerCase().endsWith('.wav')) {
-            alert('Please upload a WAV file.');
+    dropAreaRef.addEventListener('drop', (e) => {
+        if (e.dataTransfer.files.length) {
+            fileRef.files = e.dataTransfer.files;
+            refFilename.textContent = fileRef.files[0].name;
+        }
+    });
+
+    fileSource.addEventListener('change', () => {
+        if (fileSource.files.length) sourceFilename.textContent = fileSource.files[0].name;
+    });
+
+    fileRef.addEventListener('change', () => {
+        if (fileRef.files.length) refFilename.textContent = fileRef.files[0].name;
+    });
+
+    btnUpload.addEventListener('click', async () => {
+        if (!fileSource.files.length) {
+            alert('Source file is mandatory.');
             return;
         }
 
         uploadLoader.classList.remove('hidden');
         const formData = new FormData();
-        formData.append('file', file);
+        formData.append('file_source', fileSource.files[0]);
+        if (fileRef.files.length) {
+            formData.append('file_reference', fileRef.files[0]);
+        }
 
         try {
             const res = await fetch('/upload', { method: 'POST', body: formData });
@@ -255,11 +240,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const data = await res.json();
                 fileId = data.file_id;
                 statusBar.textContent = res.status === 206 ? 'Audio truncated to 15s.' : 'Ready to edit.';
-
-                // Render baseline metrics in Pro mode (T-Spec 3)
-                if (data.metrics) {
-                    renderBaselines(data.metrics);
-                }
+                
+                metricsCache.source = data.source_metrics;
+                metricsCache.reference = data.reference_metrics;
+                
+                initRadialUI();
 
                 await triggerProcessing();
                 uploadPanel.classList.add('hidden');
@@ -275,76 +260,62 @@ document.addEventListener('DOMContentLoaded', () => {
         } finally {
             uploadLoader.classList.add('hidden');
         }
+    });
+
+    // ===================================================================
+    // RADIAL UI INITIALIZATION (T-Spec 4)
+    // ===================================================================
+
+    function calculatePercent(value, min, max) {
+        let percent = ((value - min) / (max - min)) * 100;
+        return Math.max(0, Math.min(100, percent));
     }
 
-    /**
-     * Render baseline acoustic metrics into Pro mode DOM elements.
-     * §5 Fault Tolerance: null → 'N/A', negative HNR → 'Unvoiced'
-     */
-    function renderBaselines(m) {
-        const fmt = (v, unit, decimals = 1) => {
-            if (v === null || v === undefined) return 'N/A';
-            return Number(v).toFixed(decimals) + (unit || '');
+    function initRadialUI() {
+        const base = metricsCache.source || {};
+        const ref = metricsCache.reference || null;
+
+        const syncAxis = (sliderId, displayId, refId, baseVal, refVal, decimals) => {
+            const slider = proSliders[sliderId];
+            const display = proDisplays[displayId];
+            const refMarker = document.getElementById(refId);
+
+            if (baseVal !== undefined && baseVal !== null) {
+                slider.value = baseVal;
+                display.innerText = Number(baseVal).toFixed(decimals);
+            }
+
+            if (ref && refVal !== undefined && refVal !== null) {
+                const pct = calculatePercent(refVal, parseFloat(slider.min), parseFloat(slider.max));
+                refMarker.style.setProperty('--ref-percent', `${pct}%`);
+                refMarker.style.display = 'block';
+            } else {
+                // §4 Single file mode: hide reference marker
+                refMarker.style.display = 'none';
+            }
         };
 
-        const el = (id) => document.getElementById(id);
-
-        // Pitch
-        if (m.pitch_hz === null) {
-            el('baseline-pitch').textContent = 'Original: N/A';
-        } else {
-            el('baseline-pitch').textContent = `Original: ${fmt(m.pitch_hz, ' Hz')}`;
-        }
-
-        // F1 / F2 under Formant Ratio
-        el('baseline-f1').textContent = `F1: ${fmt(m.f1_hz, ' Hz')}`;
-        el('baseline-f2').textContent = `F2: ${fmt(m.f2_hz, ' Hz')}`;
-
-        // HF Energy under Presence
-        el('baseline-hf').textContent = `HF Energy: ${fmt(m.hf_energy_ratio, '', 3)}`;
-
-        // Crest Factor under Compression
-        el('baseline-crest').textContent = `Crest Factor: ${fmt(m.crest_factor_db, ' dB')}`;
-
-        // F2 absolute under F2 Shift
-        el('baseline-f2-abs').textContent = `Original F2: ${fmt(m.f2_hz, ' Hz')}`;
-
-        // Jitter
-        if (m.jitter_pct === null) {
-            el('baseline-jitter').textContent = m.hnr_db !== null && m.hnr_db < 0
-                ? 'Original: Unvoiced'
-                : 'Original: N/A';
-        } else {
-            el('baseline-jitter').textContent = `Original: ${fmt(m.jitter_pct, '%', 2)}`;
-        }
-
-        // HNR under Breathiness
-        if (m.hnr_db === null) {
-            el('baseline-hnr').textContent = 'HNR: N/A';
-        } else {
-            el('baseline-hnr').textContent = `HNR: ${fmt(m.hnr_db, ' dB')}`;
-        }
-
-        // Noise Floor
-        el('baseline-noise-floor').textContent = `Noise Floor: ${fmt(m.noise_floor_db, ' dB')}`;
-
-        // Sibilance Peak
-        el('baseline-sibilance').textContent = `Peak Sibilance: ${fmt(m.sibilance_peak_db, ' dB')}`;
+        syncAxis('pitch', 'pitch', 'ref-pitch', base.pitch_hz, ref?.pitch_hz, 0);
+        syncAxis('f1', 'f1', 'ref-f1', base.f1_hz, ref?.f1_hz, 0);
+        syncAxis('f2', 'f2', 'ref-f2', base.f2_hz, ref?.f2_hz, 0);
+        syncAxis('hf', 'hf', 'ref-hf', base.hf_energy_ratio, ref?.hf_energy_ratio, 2);
+        syncAxis('crest', 'crest', 'ref-crest', base.crest_factor_db, ref?.crest_factor_db, 1);
+        syncAxis('sib', 'sib', 'ref-sib', base.sibilance_peak_db, ref?.sibilance_peak_db, 1);
+        syncAxis('noise', 'noise', 'ref-noise', base.noise_floor_db, ref?.noise_floor_db, 0);
+        syncAxis('hnr', 'hnr', 'ref-hnr', base.hnr_db, ref?.hnr_db, 1);
+        syncAxis('jitter', 'jitter', 'ref-jitter', base.jitter_pct, ref?.jitter_pct, 2);
     }
 
-    // ===================================================================
-    // PAYLOAD BUILDER & DSP TRIGGER
-    // ===================================================================
+    // Attach local input listeners for dynamic number updates
+    Object.keys(proSliders).forEach(key => {
+        proSliders[key].addEventListener('input', function() {
+            proDisplays[key].innerText = Number(this.value).toFixed(this.step.includes('.') ? this.step.split('.')[1].length : 0);
+            macroDisconnected = true;
+        });
+    });
 
-    /**
-     * Build the JSON payload from current slider state.
-     * In Simple mode: uses PCA mapper from macro sliders.
-     * In Pro mode: reads engineering sliders directly.
-     * Always sends both basic + advanced keys (backend is mode-agnostic).
-     */
     function buildPayload() {
         if (uiMode === 'simple' && !macroDisconnected) {
-            // PCA mapping path
             return calculateMicroParams(
                 macroSliders.clarity.value,
                 macroSliders.warmth.value,
@@ -352,21 +323,66 @@ document.addEventListener('DOMContentLoaded', () => {
             );
         }
 
-        // Pro mode / disconnected: read raw slider values
+        const base = metricsCache.source || {
+            pitch_hz: 100.0, f1_hz: 500.0, f2_hz: 1500.0,
+            presence_db: 2.0, noise_floor_db: -45.0, sibilance_peak_db: -10.0,
+            crest_factor_db: 18.0, hnr_db: 15.0, jitter_pct: 1.0, hf_energy_ratio: 0.1
+        };
+
+        const currentPitchHz = parseFloat(proSliders.pitch.value);
+        const currentF1Hz = parseFloat(proSliders.f1.value);
+        const currentF2Hz = parseFloat(proSliders.f2.value);
+        const currentHf = parseFloat(proSliders.hf.value);
+        const currentCrest = parseFloat(proSliders.crest.value);
+        const currentSib = parseFloat(proSliders.sib.value);
+        const currentNoise = parseFloat(proSliders.noise.value);
+        const currentHnr = parseFloat(proSliders.hnr.value);
+        const currentJitter = parseFloat(proSliders.jitter.value);
+
+        // A. Frequencies (Ratio)
+        let pitchRatio = base.pitch_hz > 0 ? (currentPitchHz / base.pitch_hz) : 1.0;
+        let formantRatio = base.f1_hz > 0 ? (currentF1Hz / base.f1_hz) : 1.0;
+        pitchRatio = Math.max(0.5, Math.min(2.0, pitchRatio));
+        formantRatio = Math.max(0.7, Math.min(1.3, formantRatio));
+
+        // B. Deltas
+        let f2ShiftDelta = currentF2Hz - base.f2_hz;
+        
+        // Presence mapping (HF diff -> dB boost approximation)
+        let presenceDelta = (currentHf - base.hf_energy_ratio) * 20.0;
+        presenceDelta = Math.max(0.0, Math.min(10.0, presenceDelta));
+
+        // Compression (Crest Factor delta -> compression level 0-1)
+        // lower crest = more compression.
+        let crestDelta = base.crest_factor_db - currentCrest;
+        let compression = Math.max(0.0, Math.min(1.0, crestDelta * 0.05));
+
+        // DeEsser (Sibilance delta)
+        let deesserAmount = base.sibilance_peak_db - currentSib;
+        deesserAmount = Math.max(0.0, Math.min(100.0, deesserAmount * 5.0));
+
+        // Jitter Mod (absolute delta)
+        let jitterMod = currentJitter - base.jitter_pct;
+        jitterMod = Math.max(-1.0, Math.min(1.0, jitterMod));
+
+        // Breathiness (HNR delta: lower HNR = more breathiness)
+        let breathinessMod = (base.hnr_db - currentHnr) * 0.05;
+        breathinessMod = Math.max(0.0, Math.min(1.0, breathinessMod));
+
         return {
             basic: {
-                pitch_ratio: mapPitchRatio(parseInt(proSliders.pitch_ratio.value)),
-                formant_ratio: mapFormantRatio(parseInt(proSliders.formant_ratio.value)),
-                presence_db: parseFloat(proSliders.presence_db.value),
-                compression_level: parseFloat(proSliders.compression_level.value) / 100.0 // slider 0..100 → 0..1
+                pitch_ratio: Number(pitchRatio.toFixed(3)),
+                formant_ratio: Number(formantRatio.toFixed(3)),
+                presence_db: Number(presenceDelta.toFixed(1)),
+                compression_level: Number(compression.toFixed(3))
             },
             advanced: {
                 f1_shift: 0.0,
-                f2_shift: parseFloat(proSliders.f2_shift.value),
-                jitter_mod: mapJitter(parseInt(proSliders.jitter_mod.value)),
-                breathiness_mod: parseFloat(proSliders.breathiness_mod.value) / 100.0,
-                noise_gate_db: parseFloat(proSliders.noise_gate_db.value),
-                deesser_amount: parseFloat(proSliders.deesser_amount.value)
+                f2_shift: Number(f2ShiftDelta.toFixed(1)),
+                jitter_mod: Number(jitterMod.toFixed(3)),
+                breathiness_mod: Number(breathinessMod.toFixed(3)),
+                noise_gate_db: Number(currentNoise.toFixed(1)),
+                deesser_amount: Number(deesserAmount.toFixed(1))
             }
         };
     }
@@ -492,21 +508,22 @@ document.addEventListener('DOMContentLoaded', () => {
     Object.keys(macroSliders).forEach(key => {
         macroSliders[key].addEventListener('input', () => {
             updateMacroDisplays();
-            syncProSlidersFromMacro(); // One-way: macro → pro
+            syncProSlidersFromMacro(); // One-way: macro → pro (disabled in full radial but kept for structure)
             triggerProcessing();
         });
     });
 
     // Pro sliders → disconnect macro → trigger DSP (§2 step 5)
     Object.keys(proSliders).forEach(key => {
-        proSliders[key].addEventListener('input', () => {
+        proSliders[key].addEventListener('change', () => {
             macroDisconnected = true;
-            // Reset macro sliders to default to show disconnection
+            
+            // Reset macro sliders to default to visualize disconnection
             macroSliders.clarity.value = 0;
             macroSliders.warmth.value = 0;
             macroSliders.age.value = 0;
             updateMacroDisplays();
-            updateProDisplays();
+            
             triggerProcessing();
         });
     });

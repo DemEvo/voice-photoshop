@@ -428,21 +428,31 @@ def extract_baseline_metrics(data: np.ndarray, sr: int) -> dict:
 # --- API Endpoints ---
 
 @app.post("/upload")
-async def upload_audio(file: UploadFile = File(...)):
-    contents = await file.read()
+async def upload_audio(
+    file_source: UploadFile = File(None),
+    file_reference: UploadFile = File(None),
+    file: UploadFile = File(None),  # backward compat: single-file mode
+):
+    import json as _json
 
+    # Determine source file (support both field names)
+    source_file = file_source or file
+    if source_file is None:
+        raise HTTPException(status_code=400, detail="Source file is mandatory")
+
+    # Parse source
+    source_contents = await source_file.read()
     try:
-        sr, data = wav.read(io.BytesIO(contents))
+        sr, data = wav.read(io.BytesIO(source_contents))
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid WAV file format")
+        raise HTTPException(status_code=400, detail="Invalid WAV file format (source)")
 
-    # Force Mono
     if len(data.shape) > 1:
         data = data.mean(axis=1).astype(data.dtype)
 
     rms = calculate_rms(data)
     if rms < 0.001:
-        raise HTTPException(status_code=400, detail="Audio is empty or too quiet")
+        raise HTTPException(status_code=400, detail="Source audio is empty or too quiet")
 
     data = trim_silence(data, sr, db_threshold=-40.0)
 
@@ -452,28 +462,48 @@ async def upload_audio(file: UploadFile = File(...)):
         data = data[:int(15.0 * sr)]
         status_code = 206
 
+    # Parse reference (optional)
+    ref_metrics = None
+    if file_reference is not None:
+        try:
+            ref_contents = await file_reference.read()
+            ref_sr, ref_data = wav.read(io.BytesIO(ref_contents))
+            if len(ref_data.shape) > 1:
+                ref_data = ref_data.mean(axis=1).astype(ref_data.dtype)
+            ref_data = trim_silence(ref_data, ref_sr, db_threshold=-40.0)
+            ref_duration = len(ref_data) / ref_sr
+            if ref_duration > 20.0:
+                ref_data = ref_data[:int(15.0 * ref_sr)]
+            ref_metrics = extract_baseline_metrics(ref_data, ref_sr)
+            logger.info(f"Reference metrics: {ref_metrics}")
+        except Exception as e:
+            logger.warning(f"Reference file parse failed: {e}. Continuing without reference.")
+            ref_metrics = None
+
+    # Session cleanup
     current_time = time.time()
     keys_to_delete = [k for k, v in audio_sessions.items() if current_time - v['last_accessed'] > 3600]
     for k in keys_to_delete:
         audio_sessions.pop(k, None)
 
-    # Extract baseline metrics (T-Spec 3)
-    import json as _json
-    metrics = extract_baseline_metrics(data, sr)
-    logger.info(f"Baseline metrics: {metrics}")
+    # Extract source baseline metrics
+    source_metrics = extract_baseline_metrics(data, sr)
+    logger.info(f"Source metrics: {source_metrics}")
 
     file_id = str(uuid.uuid4())
     audio_sessions[file_id] = {
         'data': data,
         'sr': sr,
         'last_accessed': current_time,
-        'metrics': metrics
+        'metrics': source_metrics
     }
 
     response_body = _json.dumps({
         "file_id": file_id,
         "message": "Uploaded successfully",
-        "metrics": metrics
+        "metrics": source_metrics,
+        "source_metrics": source_metrics,
+        "reference_metrics": ref_metrics
     })
 
     return Response(
